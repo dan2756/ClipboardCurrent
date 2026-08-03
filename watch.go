@@ -8,13 +8,14 @@ import (
 	"time"
 )
 
-// watcher polls a Backend and writes each new clip to out.
+// watcher polls a Backend and hands each new clip to a sink.
 type watcher struct {
 	backend        Backend
 	interval       time.Duration
 	includeCurrent bool
-	out            io.Writer
+	sink           sink
 	errOut         io.Writer
+	now            func() time.Time
 }
 
 func newWatcher(cfg config, b Backend, out, errOut io.Writer) *watcher {
@@ -22,8 +23,9 @@ func newWatcher(cfg config, b Backend, out, errOut io.Writer) *watcher {
 		backend:        b,
 		interval:       cfg.interval,
 		includeCurrent: cfg.includeCurrent,
-		out:            out,
+		sink:           &writerSink{w: out, framing: cfg.framing, timestamp: cfg.timestamp},
 		errOut:         errOut,
+		now:            time.Now,
 	}
 }
 
@@ -72,19 +74,11 @@ func (w *watcher) run(ctx context.Context) error {
 	}
 }
 
-// emit prints one clip followed by a newline, unless it already ends with
-// one. Empty clips (a cleared clipboard) are never printed.
+// emit passes one clip on to the sink. Empty clips (a cleared clipboard)
+// are never emitted.
 func (w *watcher) emit(data []byte) error {
 	if len(data) == 0 {
 		return nil
 	}
-	buf := make([]byte, 0, len(data)+1)
-	buf = append(buf, data...)
-	if data[len(data)-1] != '\n' {
-		buf = append(buf, '\n')
-	}
-	// One Write per clip, straight to the file: a reader on the other end
-	// of a pipe sees each clip as soon as it is copied.
-	_, err := w.out.Write(buf)
-	return err
+	return w.sink.emit(clip{time: w.now(), text: data})
 }

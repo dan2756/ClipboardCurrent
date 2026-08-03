@@ -20,17 +20,24 @@ Polls the clipboard and prints each new clip once, as it changes. Whatever
 is already on the clipboard at startup is skipped unless --include-current
 is given. Stop with Ctrl-C.
 
-Flags:
+Polling:
   -i, --interval DUR         poll interval, e.g. 250ms or 2s; a bare number is
                              milliseconds (default 500ms)
       --backend NAME         auto, pbpaste, wl-paste, xclip or xsel (default auto)
       --include-current      also print what is on the clipboard at startup
+
+Output:
+  -0, --null                 end each clip with NUL instead of a newline
+      --json                 one JSON object per line: {"time","bytes","text"}
+      --timestamp            prefix each clip with an RFC 3339 time and a tab
+
   -h, --help                 show this help
       --version              print the version
 
 Examples:
   clipwatch | grep -E '^https?://' >> links.txt
-  clipwatch --backend xsel -i 1s
+  clipwatch -0 | xargs -0 -n1 notify-send Copied
+  clipwatch --json | jq -r .text
 `
 
 // minInterval keeps a typo like "-i 1" from becoming a busy loop of
@@ -42,6 +49,8 @@ type config struct {
 	interval       time.Duration
 	backend        string
 	includeCurrent bool
+	framing        framing
+	timestamp      bool
 	showVersion    bool
 }
 
@@ -60,6 +69,11 @@ func parseArgs(args []string) (config, error) {
 	fs.Var(interval, "interval", "")
 	fs.StringVar(&cfg.backend, "backend", cfg.backend, "")
 	fs.BoolVar(&cfg.includeCurrent, "include-current", false, "")
+	var null, jsonOut bool
+	fs.BoolVar(&null, "0", false, "")
+	fs.BoolVar(&null, "null", false, "")
+	fs.BoolVar(&jsonOut, "json", false, "")
+	fs.BoolVar(&cfg.timestamp, "timestamp", false, "")
 	fs.BoolVar(&cfg.showVersion, "version", false, "")
 
 	if err := fs.Parse(args); err != nil {
@@ -70,6 +84,16 @@ func parseArgs(args []string) (config, error) {
 	}
 	if cfg.interval < minInterval {
 		return cfg, fmt.Errorf("--interval must be at least %v", minInterval)
+	}
+	switch {
+	case null && jsonOut:
+		return cfg, errors.New("--null and --json cannot be used together")
+	case jsonOut && cfg.timestamp:
+		return cfg, errors.New("--timestamp has no effect with --json, which always includes the time")
+	case jsonOut:
+		cfg.framing = frameJSON
+	case null:
+		cfg.framing = frameNull
 	}
 	return cfg, nil
 }

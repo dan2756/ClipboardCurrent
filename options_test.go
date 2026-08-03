@@ -93,3 +93,31 @@ func TestRunUsageError(t *testing.T) {
 		t.Errorf("stderr = %q, want a pointer to --help", stderr.String())
 	}
 }
+
+func TestParseFraming(t *testing.T) {
+	tests := []struct {
+		args []string
+		want framing
+	}{
+		{nil, frameLines},
+		{[]string{"-0"}, frameNull},
+		{[]string{"--null"}, frameNull},
+		{[]string{"--json"}, frameJSON},
+	}
+	for _, tt := range tests {
+		cfg, err := parseArgs(tt.args)
+		if err != nil {
+			t.Errorf("%v: %v", tt.args, err)
+			continue
+		}
+		if cfg.framing != tt.want {
+			t.Errorf("%v: framing = %v, want %v", tt.args, cfg.framing, tt.want)
+		}
+	}
+
+	for _, args := range [][]string{{"-0", "--json"}, {"--json", "--timestamp"}} {
+		if _, err := parseArgs(args); err == nil {
+			t.Errorf("%v: want an error", args)
+		}
+	}
+}

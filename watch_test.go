@@ -53,8 +53,9 @@ type watchResult struct {
 
 // watch runs a watcher over script with a 1ms interval and returns what it
 // printed. The script fully determines the result: each poll consumes one
-// state, however fast or slow the ticker is.
-func watch(t *testing.T, cfg config, script []fakeState) watchResult {
+// state, however fast or slow the ticker is. opts can adjust the watcher
+// before it starts.
+func watch(t *testing.T, cfg config, script []fakeState, opts ...func(*watcher)) watchResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -65,6 +66,9 @@ func watch(t *testing.T, cfg config, script []fakeState) watchResult {
 	fb := &fakeBackend{states: script, cancel: cancel}
 	var stdout, stderr bytes.Buffer
 	w := newWatcher(cfg, fb, &stdout, &stderr)
+	for _, opt := range opts {
+		opt(w)
+	}
 	err := w.run(ctx)
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("watch did not finish: %d of %d states read", fb.reads, len(script))
