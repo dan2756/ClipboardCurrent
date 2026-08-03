@@ -13,6 +13,7 @@ type watcher struct {
 	backend        Backend
 	interval       time.Duration
 	includeCurrent bool
+	filters        filters
 	sink           sink
 	errOut         io.Writer
 	now            func() time.Time
@@ -23,9 +24,15 @@ func newWatcher(cfg config, b Backend, out, errOut io.Writer) *watcher {
 		backend:        b,
 		interval:       cfg.interval,
 		includeCurrent: cfg.includeCurrent,
-		sink:           &writerSink{w: out, framing: cfg.framing, timestamp: cfg.timestamp},
-		errOut:         errOut,
-		now:            time.Now,
+		filters: filters{
+			trim:           cfg.trim,
+			skipWhitespace: cfg.ignoreWhitespaceOnly,
+			maxBytes:       cfg.maxBytes,
+			match:          cfg.filter,
+		},
+		sink:   &writerSink{w: out, framing: cfg.framing, timestamp: cfg.timestamp},
+		errOut: errOut,
+		now:    time.Now,
 	}
 }
 
@@ -74,11 +81,11 @@ func (w *watcher) run(ctx context.Context) error {
 	}
 }
 
-// emit passes one clip on to the sink. Empty clips (a cleared clipboard)
-// are never emitted.
+// emit passes one clipboard change through the filters and on to the sink.
 func (w *watcher) emit(data []byte) error {
-	if len(data) == 0 {
+	text, ok := w.filters.apply(data)
+	if !ok {
 		return nil
 	}
-	return w.sink.emit(clip{time: w.now(), text: data})
+	return w.sink.emit(clip{time: w.now(), text: text})
 }

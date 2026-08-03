@@ -121,3 +121,26 @@ func TestParseFraming(t *testing.T) {
 		}
 	}
 }
+
+func TestParseFilters(t *testing.T) {
+	cfg, err := parseArgs([]string{"--filter", `^https?://`, "--max-bytes", "1MB", "--trim", "--ignore-whitespace-only"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.filter == nil || !cfg.filter.MatchString("https://go.dev") {
+		t.Errorf("filter = %v", cfg.filter)
+	}
+	if cfg.maxBytes != 1<<20 {
+		t.Errorf("maxBytes = %d, want %d", cfg.maxBytes, 1<<20)
+	}
+	if !cfg.trim || !cfg.ignoreWhitespaceOnly {
+		t.Errorf("trim = %v, ignoreWhitespaceOnly = %v", cfg.trim, cfg.ignoreWhitespaceOnly)
+	}
+
+	if _, err := parseArgs([]string{"--filter", "("}); err == nil || !strings.Contains(err.Error(), "--filter") {
+		t.Errorf("bad regex: err = %v", err)
+	}
+	if _, err := parseArgs([]string{"--max-bytes", "lots"}); err == nil || !strings.Contains(err.Error(), "invalid size") {
+		t.Errorf("bad size: err = %v", err)
+	}
+}

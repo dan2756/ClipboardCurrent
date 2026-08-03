@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"regexp"
 	"runtime/debug"
 	"strconv"
 	"time"
@@ -31,6 +32,13 @@ Output:
       --json                 one JSON object per line: {"time","bytes","text"}
       --timestamp            prefix each clip with an RFC 3339 time and a tab
 
+Filters:
+      --filter REGEX         only emit clips matching REGEX (Go syntax)
+      --max-bytes SIZE       skip clips larger than SIZE, e.g. 64KB or 1MB
+      --trim                 strip leading and trailing whitespace
+      --ignore-whitespace-only
+                             skip clips made only of whitespace
+
   -h, --help                 show this help
       --version              print the version
 
@@ -38,6 +46,7 @@ Examples:
   clipwatch | grep -E '^https?://' >> links.txt
   clipwatch -0 | xargs -0 -n1 notify-send Copied
   clipwatch --json | jq -r .text
+  clipwatch --trim --filter '^[0-9a-f]{40}$' --max-bytes 1KB
 `
 
 // minInterval keeps a typo like "-i 1" from becoming a busy loop of
@@ -51,7 +60,13 @@ type config struct {
 	includeCurrent bool
 	framing        framing
 	timestamp      bool
-	showVersion    bool
+
+	filter               *regexp.Regexp
+	maxBytes             int64
+	trim                 bool
+	ignoreWhitespaceOnly bool
+
+	showVersion bool
 }
 
 func parseArgs(args []string) (config, error) {
@@ -74,6 +89,11 @@ func parseArgs(args []string) (config, error) {
 	fs.BoolVar(&null, "null", false, "")
 	fs.BoolVar(&jsonOut, "json", false, "")
 	fs.BoolVar(&cfg.timestamp, "timestamp", false, "")
+	var filter string
+	fs.StringVar(&filter, "filter", "", "")
+	fs.Var((*sizeValue)(&cfg.maxBytes), "max-bytes", "")
+	fs.BoolVar(&cfg.trim, "trim", false, "")
+	fs.BoolVar(&cfg.ignoreWhitespaceOnly, "ignore-whitespace-only", false, "")
 	fs.BoolVar(&cfg.showVersion, "version", false, "")
 
 	if err := fs.Parse(args); err != nil {
@@ -94,6 +114,13 @@ func parseArgs(args []string) (config, error) {
 		cfg.framing = frameJSON
 	case null:
 		cfg.framing = frameNull
+	}
+	if filter != "" {
+		re, err := regexp.Compile(filter)
+		if err != nil {
+			return cfg, fmt.Errorf("--filter: %v", err)
+		}
+		cfg.filter = re
 	}
 	return cfg, nil
 }

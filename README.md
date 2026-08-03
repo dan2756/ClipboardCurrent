@@ -38,6 +38,10 @@ clipwatch [flags]
 | `-0`, `--null`        | End each clip with a NUL byte instead of a newline.           |
 | `--json`              | Print one JSON object per clip (NDJSON).                      |
 | `--timestamp`         | Prefix each clip with an RFC 3339 timestamp and a tab.        |
+| `--filter REGEX`      | Only emit clips matching `REGEX` ([Go syntax](https://pkg.go.dev/regexp/syntax)). |
+| `--max-bytes SIZE`    | Skip clips larger than `SIZE` (`4096`, `64KB`, `1MB`; units are 1024-based). |
+| `--trim`              | Strip leading and trailing whitespace.                        |
+| `--ignore-whitespace-only` | Skip clips that contain nothing but whitespace.          |
 | `--version`           | Print the version.                                            |
 
 What is already on the clipboard when clipwatch starts is not printed unless
@@ -64,10 +68,27 @@ milliseconds), the clip size in bytes, and the text:
 ```
 
 `text` is a JSON string, so invalid UTF-8 is replaced with U+FFFD; `bytes`
-is always the size of the clip as copied.
+is always the exact size of the emitted clip.
 
 **Timestamps (`--timestamp`).** Adds `2026-08-03T12:32:52+02:00<TAB>` in
 front of each clip in line or NUL mode. JSON already carries the time.
+
+## Filters
+
+Filters run in this order, and a clip that fails one is silently skipped:
+
+1. `--trim` strips surrounding whitespace (everything below sees the trimmed text).
+2. Empty clips, such as a cleared clipboard, are always skipped.
+3. `--ignore-whitespace-only` skips clips that are only spaces, tabs and newlines.
+4. `--max-bytes` skips clips that are too large.
+5. `--filter` keeps only clips the regular expression matches. It is matched
+   against the whole clip, so `^` and `$` anchor to its start and end; use
+   `(?m)` for per-line anchors.
+
+```sh
+# Collect git commit hashes as they are copied.
+clipwatch --trim --filter '^[0-9a-f]{7,40}$' >> shas.txt
+```
 
 ## License
 
