@@ -14,6 +14,7 @@ type watcher struct {
 	interval       time.Duration
 	includeCurrent bool
 	filters        filters
+	recent         *history
 	sink           sink
 	errOut         io.Writer
 	now            func() time.Time
@@ -30,6 +31,7 @@ func newWatcher(cfg config, b Backend, out, errOut io.Writer) *watcher {
 			maxBytes:       cfg.maxBytes,
 			match:          cfg.filter,
 		},
+		recent: newHistory(cfg.dedupe),
 		sink:   &writerSink{w: out, framing: cfg.framing, timestamp: cfg.timestamp},
 		errOut: errOut,
 		now:    time.Now,
@@ -81,10 +83,11 @@ func (w *watcher) run(ctx context.Context) error {
 	}
 }
 
-// emit passes one clipboard change through the filters and on to the sink.
+// emit passes one clipboard change through the filters and the dedupe
+// window, and on to the sink.
 func (w *watcher) emit(data []byte) error {
 	text, ok := w.filters.apply(data)
-	if !ok {
+	if !ok || w.recent.seen(text) {
 		return nil
 	}
 	return w.sink.emit(clip{time: w.now(), text: text})

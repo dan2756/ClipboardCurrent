@@ -38,6 +38,8 @@ Filters:
       --trim                 strip leading and trailing whitespace
       --ignore-whitespace-only
                              skip clips made only of whitespace
+      --dedupe N             skip clips identical to one of the last N emitted
+                             (default 1; 0 disables)
 
   -h, --help                 show this help
       --version              print the version
@@ -65,6 +67,7 @@ type config struct {
 	maxBytes             int64
 	trim                 bool
 	ignoreWhitespaceOnly bool
+	dedupe               int
 
 	showVersion bool
 }
@@ -73,6 +76,7 @@ func parseArgs(args []string) (config, error) {
 	cfg := config{
 		interval: 500 * time.Millisecond,
 		backend:  "auto",
+		dedupe:   1,
 	}
 
 	fs := flag.NewFlagSet("clipwatch", flag.ContinueOnError)
@@ -94,6 +98,7 @@ func parseArgs(args []string) (config, error) {
 	fs.Var((*sizeValue)(&cfg.maxBytes), "max-bytes", "")
 	fs.BoolVar(&cfg.trim, "trim", false, "")
 	fs.BoolVar(&cfg.ignoreWhitespaceOnly, "ignore-whitespace-only", false, "")
+	fs.IntVar(&cfg.dedupe, "dedupe", cfg.dedupe, "")
 	fs.BoolVar(&cfg.showVersion, "version", false, "")
 
 	if err := fs.Parse(args); err != nil {
@@ -104,6 +109,9 @@ func parseArgs(args []string) (config, error) {
 	}
 	if cfg.interval < minInterval {
 		return cfg, fmt.Errorf("--interval must be at least %v", minInterval)
+	}
+	if cfg.dedupe < 0 {
+		return cfg, errors.New("--dedupe must be 0 or more")
 	}
 	switch {
 	case null && jsonOut:

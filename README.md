@@ -42,6 +42,7 @@ clipwatch [flags]
 | `--max-bytes SIZE`    | Skip clips larger than `SIZE` (`4096`, `64KB`, `1MB`; units are 1024-based). |
 | `--trim`              | Strip leading and trailing whitespace.                        |
 | `--ignore-whitespace-only` | Skip clips that contain nothing but whitespace.          |
+| `--dedupe N`          | Skip clips identical to any of the last `N` printed. Default `1`; `0` disables. |
 | `--version`           | Print the version.                                            |
 
 What is already on the clipboard when clipwatch starts is not printed unless
@@ -84,10 +85,17 @@ Filters run in this order, and a clip that fails one is silently skipped:
 5. `--filter` keeps only clips the regular expression matches. It is matched
    against the whole clip, so `^` and `$` anchor to its start and end; use
    `(?m)` for per-line anchors.
+6. `--dedupe N` skips a clip identical to one of the last `N` clips that were
+   actually printed. The default of 1 hides the common "copy, clear, copy the
+   same thing again" pattern; a larger window keeps a history file free of
+   repeats. Only hashes are kept, so a large `N` is cheap.
 
 ```sh
 # Collect git commit hashes as they are copied.
 clipwatch --trim --filter '^[0-9a-f]{7,40}$' >> shas.txt
+
+# A clipboard history without repeats from the last 500 clips.
+clipwatch --trim --dedupe 500 --timestamp >> ~/.clipboard-history
 ```
 
 ## License

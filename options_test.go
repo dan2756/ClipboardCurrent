@@ -144,3 +144,19 @@ func TestParseFilters(t *testing.T) {
 		t.Errorf("bad size: err = %v", err)
 	}
 }
+
+func TestParseDedupe(t *testing.T) {
+	cfg, err := parseArgs(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.dedupe != 1 {
+		t.Errorf("default dedupe = %d, want 1", cfg.dedupe)
+	}
+	if cfg, _ := parseArgs([]string{"--dedupe", "20"}); cfg.dedupe != 20 {
+		t.Errorf("dedupe = %d, want 20", cfg.dedupe)
+	}
+	if _, err := parseArgs([]string{"--dedupe", "-1"}); err == nil {
+		t.Error("negative --dedupe should be rejected")
+	}
+}

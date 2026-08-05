@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"regexp"
 )
 
@@ -32,4 +33,38 @@ func (f *filters) apply(raw []byte) (text []byte, ok bool) {
 		return nil, false
 	}
 	return text, true
+}
+
+// history remembers the last n emitted clips, by hash, so repeats can be
+// skipped without keeping every clip in memory.
+type history struct {
+	size int
+	sums [][sha256.Size]byte
+	next int // slot to overwrite once sums is full
+}
+
+func newHistory(n int) *history {
+	return &history{size: n, sums: make([][sha256.Size]byte, 0, min(n, 64))}
+}
+
+// seen reports whether text is among the remembered clips, and remembers
+// it if it is not. Repeats do not refresh their position: the window is
+// the last n clips that were actually emitted.
+func (h *history) seen(text []byte) bool {
+	if h.size <= 0 {
+		return false
+	}
+	sum := sha256.Sum256(text)
+	for _, s := range h.sums {
+		if s == sum {
+			return true
+		}
+	}
+	if len(h.sums) < h.size {
+		h.sums = append(h.sums, sum)
+	} else {
+		h.sums[h.next] = sum
+		h.next = (h.next + 1) % h.size
+	}
+	return false
 }
