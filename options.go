@@ -31,6 +31,8 @@ Output:
   -0, --null                 end each clip with NUL instead of a newline
       --json                 one JSON object per line: {"time","bytes","text"}
       --timestamp            prefix each clip with an RFC 3339 time and a tab
+      --exec CMD             run sh -c CMD once per clip with the clip on stdin
+                             and CLIPWATCH_BYTES set, instead of printing
 
 Filters:
       --filter REGEX         only emit clips matching REGEX (Go syntax)
@@ -49,6 +51,7 @@ Examples:
   clipwatch -0 | xargs -0 -n1 notify-send Copied
   clipwatch --json | jq -r .text
   clipwatch --trim --filter '^[0-9a-f]{40}$' --max-bytes 1KB
+  clipwatch --exec 'notify-send "Copied $CLIPWATCH_BYTES bytes"'
 `
 
 // minInterval keeps a typo like "-i 1" from becoming a busy loop of
@@ -62,6 +65,7 @@ type config struct {
 	includeCurrent bool
 	framing        framing
 	timestamp      bool
+	exec           string
 
 	filter               *regexp.Regexp
 	maxBytes             int64
@@ -93,6 +97,7 @@ func parseArgs(args []string) (config, error) {
 	fs.BoolVar(&null, "null", false, "")
 	fs.BoolVar(&jsonOut, "json", false, "")
 	fs.BoolVar(&cfg.timestamp, "timestamp", false, "")
+	fs.StringVar(&cfg.exec, "exec", "", "")
 	var filter string
 	fs.StringVar(&filter, "filter", "", "")
 	fs.Var((*sizeValue)(&cfg.maxBytes), "max-bytes", "")
@@ -114,6 +119,8 @@ func parseArgs(args []string) (config, error) {
 		return cfg, errors.New("--dedupe must be 0 or more")
 	}
 	switch {
+	case cfg.exec != "" && (null || jsonOut || cfg.timestamp):
+		return cfg, errors.New("--exec replaces printing; it cannot be combined with --null, --json or --timestamp")
 	case null && jsonOut:
 		return cfg, errors.New("--null and --json cannot be used together")
 	case jsonOut && cfg.timestamp:

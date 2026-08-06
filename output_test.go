@@ -3,7 +3,10 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -81,7 +84,7 @@ func TestOneWritePerClip(t *testing.T) {
 	var cw countingWriter
 	s := &writerSink{w: &cw, framing: frameLines, timestamp: true}
 	for _, text := range []string{"a", "b\n", "c"} {
-		if err := s.emit(clip{time: fixedTime, text: []byte(text)}); err != nil {
+		if err := s.emit(context.Background(), clip{time: fixedTime, text: []byte(text)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -98,4 +101,56 @@ type countingWriter struct {
 func (c *countingWriter) Write(p []byte) (int, error) {
 	c.writes++
 	return c.Buffer.Write(p)
+}
+
+func TestExecGetsClipOnStdin(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "clips")
+	// Record size and content of every clip; appending in order proves the
+	// commands ran one after another.
+	cmd := `{ printf '%s:' "$CLIPWATCH_BYTES"; cat; printf '|'; } >> '` + out + `'`
+	r := watch(t, config{exec: cmd}, states("", "hello", "two\nlines\n", "héllo"))
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if r.stdout != "" {
+		t.Errorf("--exec should not print clips itself, got %q", r.stdout)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "5:hello|10:two\nlines\n|6:héllo|"; string(got) != want {
+		t.Errorf("command saw %q, want %q", got, want)
+	}
+}
+
+func TestExecOutputGoesToStdout(t *testing.T) {
+	r := watch(t, config{exec: "tr a-z A-Z; echo"}, states("", "shout", "louder"))
+	if want := "SHOUT\nLOUDER\n"; r.stdout != want {
+		t.Errorf("stdout = %q, want %q", r.stdout, want)
+	}
+}
+
+func TestExecFailureIsReportedAndWatchContinues(t *testing.T) {
+	r := watch(t, config{exec: `cat >/dev/null; echo "seen" >&2; exit 3`}, states("", "a", "b"))
+	if r.err != nil {
+		t.Fatalf("a failing --exec should not stop the watch: %v", r.err)
+	}
+	if n := strings.Count(r.stderr, "exit status 3"); n != 2 {
+		t.Errorf("stderr reports %d failures, want 2:\n%s", n, r.stderr)
+	}
+	if n := strings.Count(r.stderr, "seen"); n != 2 {
+		t.Errorf("command stderr seen %d times, want 2:\n%s", n, r.stderr)
+	}
+}
+
+func TestExecCommandIgnoringStdin(t *testing.T) {
+	big := strings.Repeat("x", 1<<20) // more than a pipe buffer
+	r := watch(t, config{exec: "echo ran"}, states("", big))
+	if r.stdout != "ran\n" {
+		t.Errorf("stdout = %q, want %q", r.stdout, "ran\n")
+	}
+	if r.stderr != "" {
+		t.Errorf("unexpected stderr: %s", r.stderr)
+	}
 }

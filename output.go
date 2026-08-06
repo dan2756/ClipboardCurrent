@@ -2,8 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"os/exec"
+	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -13,9 +18,10 @@ type clip struct {
 	text []byte
 }
 
-// sink receives the clips that should be emitted.
+// sink receives the clips that should be emitted. An error from emit
+// stops the watch.
 type sink interface {
-	emit(c clip) error
+	emit(ctx context.Context, c clip) error
 }
 
 // framing decides how clips are delimited on stdout.
@@ -45,7 +51,7 @@ type writerSink struct {
 	buf       bytes.Buffer
 }
 
-func (s *writerSink) emit(c clip) error {
+func (s *writerSink) emit(_ context.Context, c clip) error {
 	s.buf.Reset()
 	switch s.framing {
 	case frameJSON:
@@ -76,4 +82,36 @@ func (s *writerSink) emit(c clip) error {
 	// of a pipe sees each record whole, as soon as it is copied.
 	_, err := s.w.Write(s.buf.Bytes())
 	return err
+}
+
+// execGrace is how long an --exec command gets to exit after clipwatch is
+// asked to stop, before it is killed.
+const execGrace = 2 * time.Second
+
+// execSink runs a shell command once per clip, with the clip on stdin and
+// its size in CLIPWATCH_BYTES. Commands run one at a time: polling pauses
+// until each one exits, so they never overlap or reorder.
+type execSink struct {
+	command string
+	stdout  io.Writer
+	stderr  io.Writer
+}
+
+func (s *execSink) emit(ctx context.Context, c clip) error {
+	cmd := exec.CommandContext(ctx, "sh", "-c", s.command)
+	cmd.Stdin = bytes.NewReader(c.text)
+	cmd.Stdout = s.stdout
+	cmd.Stderr = s.stderr
+	cmd.Env = append(cmd.Environ(), "CLIPWATCH_BYTES="+strconv.Itoa(len(c.text)))
+	// Ctrl-C already reaches the command through the terminal's process
+	// group; for a plain SIGTERM to clipwatch, pass it on politely first.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = execGrace
+
+	// A failing command is reported but does not stop the watch: the next
+	// clip may well succeed.
+	if err := cmd.Run(); err != nil && ctx.Err() == nil {
+		fmt.Fprintf(s.stderr, "clipwatch: --exec: %v\n", err)
+	}
+	return nil
 }

@@ -21,6 +21,10 @@ type watcher struct {
 }
 
 func newWatcher(cfg config, b Backend, out, errOut io.Writer) *watcher {
+	var sk sink = &writerSink{w: out, framing: cfg.framing, timestamp: cfg.timestamp}
+	if cfg.exec != "" {
+		sk = &execSink{command: cfg.exec, stdout: out, stderr: errOut}
+	}
 	return &watcher{
 		backend:        b,
 		interval:       cfg.interval,
@@ -32,7 +36,7 @@ func newWatcher(cfg config, b Backend, out, errOut io.Writer) *watcher {
 			match:          cfg.filter,
 		},
 		recent: newHistory(cfg.dedupe),
-		sink:   &writerSink{w: out, framing: cfg.framing, timestamp: cfg.timestamp},
+		sink:   sk,
 		errOut: errOut,
 		now:    time.Now,
 	}
@@ -64,13 +68,13 @@ func (w *watcher) run(ctx context.Context) error {
 			started = true
 			last = data
 			if w.includeCurrent {
-				if err := w.emit(data); err != nil {
+				if err := w.emit(ctx, data); err != nil {
 					return err
 				}
 			}
 		case !bytes.Equal(data, last):
 			last = data
-			if err := w.emit(data); err != nil {
+			if err := w.emit(ctx, data); err != nil {
 				return err
 			}
 		}
@@ -85,10 +89,10 @@ func (w *watcher) run(ctx context.Context) error {
 
 // emit passes one clipboard change through the filters and the dedupe
 // window, and on to the sink.
-func (w *watcher) emit(data []byte) error {
+func (w *watcher) emit(ctx context.Context, data []byte) error {
 	text, ok := w.filters.apply(data)
 	if !ok || w.recent.seen(text) {
 		return nil
 	}
-	return w.sink.emit(clip{time: w.now(), text: text})
+	return w.sink.emit(ctx, clip{time: w.now(), text: text})
 }

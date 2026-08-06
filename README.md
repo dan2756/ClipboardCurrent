@@ -38,6 +38,7 @@ clipwatch [flags]
 | `-0`, `--null`        | End each clip with a NUL byte instead of a newline.           |
 | `--json`              | Print one JSON object per clip (NDJSON).                      |
 | `--timestamp`         | Prefix each clip with an RFC 3339 timestamp and a tab.        |
+| `--exec CMD`          | Run `sh -c CMD` once per clip, with the clip on stdin, instead of printing. |
 | `--filter REGEX`      | Only emit clips matching `REGEX` ([Go syntax](https://pkg.go.dev/regexp/syntax)). |
 | `--max-bytes SIZE`    | Skip clips larger than `SIZE` (`4096`, `64KB`, `1MB`; units are 1024-based). |
 | `--trim`              | Strip leading and trailing whitespace.                        |
@@ -73,6 +74,32 @@ is always the exact size of the emitted clip.
 
 **Timestamps (`--timestamp`).** Adds `2026-08-03T12:32:52+02:00<TAB>` in
 front of each clip in line or NUL mode. JSON already carries the time.
+
+## Running a command per clip
+
+`--exec CMD` runs `CMD` with `sh -c` for every clip instead of printing it.
+The clip is on the command's stdin, exactly as it would have been printed
+(after `--trim`), and these variables are set:
+
+| Variable          | Value                         |
+| ----------------- | ----------------------------- |
+| `CLIPWATCH_BYTES` | Size of the clip in bytes.    |
+
+The command's own stdout and stderr go to clipwatch's. Commands run one at a
+time and polling pauses while one runs, so they never overlap; anything
+copied in the meantime is seen as a single change once the command exits. A
+command that fails is reported on stderr and the watch carries on.
+
+```sh
+# Desktop notification for every copy.
+clipwatch --exec 'notify-send "Copied $CLIPWATCH_BYTES bytes"'
+
+# Append each multi-line clip to a log, with a separator.
+clipwatch --exec 'cat >> ~/clips.log; printf "\n---\n" >> ~/clips.log'
+```
+
+`--exec` cannot be combined with `--null`, `--json` or `--timestamp`, since
+nothing is printed.
 
 ## Filters
 

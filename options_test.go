@@ -160,3 +160,18 @@ func TestParseDedupe(t *testing.T) {
 		t.Error("negative --dedupe should be rejected")
 	}
 }
+
+func TestParseExec(t *testing.T) {
+	cfg, err := parseArgs([]string{"--exec", "cat >> log"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.exec != "cat >> log" {
+		t.Errorf("exec = %q", cfg.exec)
+	}
+	for _, extra := range []string{"-0", "--json", "--timestamp"} {
+		if _, err := parseArgs([]string{"--exec", "cat", extra}); err == nil {
+			t.Errorf("--exec with %s: want an error", extra)
+		}
+	}
+}
