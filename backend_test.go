@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -99,5 +100,64 @@ func TestFirstLine(t *testing.T) {
 	}
 	if got := firstLine("\n\n"); got != "" {
 		t.Errorf("firstLine of blank = %q", got)
+	}
+}
+
+// shBackend is a cmdBackend whose "paste tool" is a shell snippet, standing
+// in for wl-paste or xclip with the given empty-clipboard hints.
+func shBackend(script string, emptyHints ...string) *cmdBackend {
+	return &cmdBackend{name: "fake-paste", argv: []string{"sh", "-c", script}, emptyHints: emptyHints}
+}
+
+func TestCmdBackendRead(t *testing.T) {
+	b := shBackend(`printf 'two\nlines'`)
+	got, err := b.Read(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "two\nlines" {
+		t.Errorf("Read = %q", got)
+	}
+}
+
+func TestCmdBackendEmptyClipboard(t *testing.T) {
+	wl := pasteCommands["wl-paste"].emptyHints
+	xclip := pasteCommands["xclip"].emptyHints
+	tests := []struct {
+		name   string
+		script string
+		hints  []string
+	}{
+		{"wl-paste", `echo "Nothing is copied" >&2; exit 1`, wl},
+		{"old wl-paste", `echo "No selection" >&2; exit 1`, wl},
+		{"wl-paste image only", `echo "No suitable type of content copied" >&2; exit 1`, wl},
+		{"xclip", `echo "Error: target STRING not available" >&2; exit 1`, xclip},
+		{"xclip utf8", `echo "Error: target UTF8_STRING not available" >&2; exit 1`, xclip},
+		{"pbpaste", `exit 0`, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := shBackend(tt.script, tt.hints...).Read(context.Background())
+			if err != nil {
+				t.Fatalf("empty clipboard reported as error: %v", err)
+			}
+			if len(got) != 0 {
+				t.Errorf("Read = %q, want nothing", got)
+			}
+		})
+	}
+}
+
+func TestCmdBackendErrors(t *testing.T) {
+	hints := pasteCommands["wl-paste"].emptyHints
+
+	_, err := shBackend(`echo "Failed to connect to a Wayland server" >&2; echo detail >&2; exit 1`, hints...).Read(context.Background())
+	if err == nil || err.Error() != "fake-paste: Failed to connect to a Wayland server" {
+		t.Errorf("err = %v, want the first stderr line", err)
+	}
+
+	_, err = shBackend(`exit 7`, hints...).Read(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "exit status 7") {
+		t.Errorf("silent failure: err = %v, want the exit status", err)
 	}
 }

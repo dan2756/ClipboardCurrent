@@ -18,6 +18,8 @@ type watcher struct {
 	sink           sink
 	errOut         io.Writer
 	now            func() time.Time
+
+	lastWarn string // last read error reported, until a read succeeds
 }
 
 func newWatcher(cfg config, b Backend, out, errOut io.Writer) *watcher {
@@ -48,7 +50,7 @@ func newWatcher(cfg config, b Backend, out, errOut io.Writer) *watcher {
 //
 // A failing first read is returned as an error, since it almost always
 // means the backend cannot work at all. Later failures are reported on
-// errOut and polling carries on.
+// errOut (once per run of identical errors) and polling carries on.
 func (w *watcher) run(ctx context.Context) error {
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
@@ -57,13 +59,16 @@ func (w *watcher) run(ctx context.Context) error {
 	started := false
 	for {
 		data, err := w.backend.Read(ctx)
+		if err == nil {
+			w.lastWarn = ""
+		}
 		switch {
 		case ctx.Err() != nil:
 			return nil
 		case err != nil && !started:
 			return err
 		case err != nil:
-			fmt.Fprintf(w.errOut, "clipwatch: %v\n", err)
+			w.warn(err)
 		case !started:
 			started = true
 			last = data
@@ -85,6 +90,17 @@ func (w *watcher) run(ctx context.Context) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+// warn reports a read error unless it is the same one as last time, so a
+// backend that keeps failing does not print a line every interval.
+func (w *watcher) warn(err error) {
+	msg := err.Error()
+	if msg == w.lastWarn {
+		return
+	}
+	w.lastWarn = msg
+	fmt.Fprintf(w.errOut, "clipwatch: %s\n", msg)
 }
 
 // emit passes one clipboard change through the filters and the dedupe

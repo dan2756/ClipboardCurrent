@@ -138,3 +138,29 @@ func TestLaterReadErrorsAreReported(t *testing.T) {
 		t.Errorf("stderr = %q, want the read error", r.stderr)
 	}
 }
+
+func TestRepeatedReadErrorsAreReportedOnce(t *testing.T) {
+	gone := errors.New("xclip: Error: Can't open display: :0")
+	other := errors.New("xclip: something else")
+	script := []fakeState{{text: "a"}, {err: gone}, {err: gone}, {err: gone}, {err: other}, {err: other}, {text: "a"}, {err: gone}}
+	r := watch(t, config{}, script)
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	want := "clipwatch: " + gone.Error() + "\nclipwatch: " + other.Error() + "\nclipwatch: " + gone.Error() + "\n"
+	if r.stderr != want {
+		t.Errorf("stderr =\n%s\nwant\n%s", r.stderr, want)
+	}
+}
+
+func TestEmptyClipboardAtStartup(t *testing.T) {
+	// Backends report an empty clipboard as no data; that must not count
+	// as a failed first read.
+	r := watch(t, config{}, []fakeState{{text: ""}, {text: ""}, {text: "first copy"}})
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if want := "first copy\n"; r.stdout != want {
+		t.Errorf("stdout = %q, want %q", r.stdout, want)
+	}
+}

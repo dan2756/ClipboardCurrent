@@ -75,6 +75,24 @@ is always the exact size of the emitted clip.
 **Timestamps (`--timestamp`).** Adds `2026-08-03T12:32:52+02:00<TAB>` in
 front of each clip in line or NUL mode. JSON already carries the time.
 
+## Backends
+
+With `--backend auto` (the default) clipwatch picks:
+
+1. `pbpaste` on macOS;
+2. `wl-paste --no-newline --type text` when `WAYLAND_DISPLAY` is set;
+3. `xclip -selection clipboard -o`, then `xsel --clipboard --output`, when
+   `DISPLAY` is set.
+
+If nothing fits, it exits with an error that says what it looked for.
+`--backend NAME` skips detection and uses that tool.
+
+An empty clipboard, or one holding only non-text data such as an image, is
+not an error: wl-paste and xclip complain and exit non-zero in that case,
+and clipwatch treats it as empty. Other read errors after startup are
+reported once on stderr and polling continues; an error on the very first
+read is fatal, since it usually means the tool cannot reach the display.
+
 ## Running a command per clip
 
 `--exec CMD` runs `CMD` with `sh -c` for every clip instead of printing it.
