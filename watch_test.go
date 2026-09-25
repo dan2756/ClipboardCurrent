@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -49,6 +51,7 @@ func states(texts ...string) []fakeState {
 type watchResult struct {
 	stdout, stderr string
 	err            error
+	reads          int // states consumed from the script
 }
 
 // watch runs a watcher over script with a 1ms interval and returns what it
@@ -73,7 +76,7 @@ func watch(t *testing.T, cfg config, script []fakeState, opts ...func(*watcher))
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("watch did not finish: %d of %d states read", fb.reads, len(script))
 	}
-	return watchResult{stdout: stdout.String(), stderr: stderr.String(), err: err}
+	return watchResult{stdout: stdout.String(), stderr: stderr.String(), err: err, reads: fb.reads}
 }
 
 func TestPrintsEachChangeOnce(t *testing.T) {
@@ -162,5 +165,56 @@ func TestEmptyClipboardAtStartup(t *testing.T) {
 	}
 	if want := "first copy\n"; r.stdout != want {
 		t.Errorf("stdout = %q, want %q", r.stdout, want)
+	}
+}
+
+func TestStopsWhenOutputGone(t *testing.T) {
+	checks := 0
+	gone := func(w *watcher) {
+		w.outputGone = func() bool { checks++; return checks > 3 }
+	}
+	r := watch(t, config{}, states("", "a", "b", "c", "d"), gone)
+	if r.err != nil {
+		t.Fatalf("a closed reader should end the watch quietly: %v", r.err)
+	}
+	if want := "a\nb\n"; r.stdout != want {
+		t.Errorf("stdout = %q, want %q", r.stdout, want)
+	}
+	if r.reads != 3 {
+		t.Errorf("kept reading after the output closed: %d reads, want 3", r.reads)
+	}
+}
+
+// brokenPipe fails every write the way os.Stdout does once its reader exits.
+type brokenPipe struct{}
+
+func (brokenPipe) Write([]byte) (int, error) {
+	return 0, &os.PathError{Op: "write", Path: "/dev/stdout", Err: syscall.EPIPE}
+}
+
+type failingWriter struct{ err error }
+
+func (f failingWriter) Write([]byte) (int, error) { return 0, f.err }
+
+func TestBrokenPipeEndsWatchQuietly(t *testing.T) {
+	toBrokenPipe := func(w *watcher) { w.sink = &writerSink{w: brokenPipe{}} }
+	r := watch(t, config{}, states("", "a", "b", "c"), toBrokenPipe)
+	if r.err != nil {
+		t.Fatalf("EPIPE should end the watch without an error: %v", r.err)
+	}
+	if r.reads != 2 {
+		t.Errorf("kept reading after EPIPE: %d reads, want 2", r.reads)
+	}
+	if r.stderr != "" {
+		t.Errorf("unexpected stderr: %q", r.stderr)
+	}
+}
+
+func TestOtherWriteErrorsAreFatal(t *testing.T) {
+	full := &os.PathError{Op: "write", Path: "/mnt/usb/links.txt", Err: syscall.ENOSPC}
+	toFullDisk := func(w *watcher) { w.sink = &writerSink{w: failingWriter{full}} }
+	r := watch(t, config{}, states("", "a", "b"), toFullDisk)
+	if !errors.Is(r.err, syscall.ENOSPC) {
+		t.Fatalf("err = %v, want ENOSPC", r.err)
 	}
 }

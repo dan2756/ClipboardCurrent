@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"syscall"
 	"time"
 )
 
@@ -18,6 +20,9 @@ type watcher struct {
 	sink           sink
 	errOut         io.Writer
 	now            func() time.Time
+
+	// outputGone, if set, reports that nobody is reading stdout any more.
+	outputGone func() bool
 
 	lastWarn string // last read error reported, until a read succeeds
 }
@@ -44,9 +49,9 @@ func newWatcher(cfg config, b Backend, out, errOut io.Writer) *watcher {
 	}
 }
 
-// run polls until ctx is cancelled. The first read only records what is on
-// the clipboard (and emits it with includeCurrent); every later change is
-// emitted once.
+// run polls until ctx is cancelled or the output is closed. The first read
+// only records what is on the clipboard (and emits it with includeCurrent);
+// every later change is emitted once.
 //
 // A failing first read is returned as an error, since it almost always
 // means the backend cannot work at all. Later failures are reported on
@@ -58,6 +63,9 @@ func (w *watcher) run(ctx context.Context) error {
 	var last []byte
 	started := false
 	for {
+		if w.outputGone != nil && w.outputGone() {
+			return nil
+		}
 		data, err := w.backend.Read(ctx)
 		if err == nil {
 			w.lastWarn = ""
@@ -74,13 +82,13 @@ func (w *watcher) run(ctx context.Context) error {
 			last = data
 			if w.includeCurrent {
 				if err := w.emit(ctx, data); err != nil {
-					return err
+					return stopError(err)
 				}
 			}
 		case !bytes.Equal(data, last):
 			last = data
 			if err := w.emit(ctx, data); err != nil {
-				return err
+				return stopError(err)
 			}
 		}
 
@@ -90,6 +98,16 @@ func (w *watcher) run(ctx context.Context) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+// stopError filters an error that ended the watch. A broken pipe is how a
+// pipeline normally tells its writer to stop ("clipwatch | head -3"), so
+// it is not an error.
+func stopError(err error) error {
+	if errors.Is(err, syscall.EPIPE) {
+		return nil
+	}
+	return err
 }
 
 // warn reports a read error unless it is the same one as last time, so a

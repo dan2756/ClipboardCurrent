@@ -143,6 +143,18 @@ clipwatch --trim --filter '^[0-9a-f]{7,40}$' >> shas.txt
 clipwatch --trim --dedupe 500 --timestamp >> ~/.clipboard-history
 ```
 
+## Exit status
+
+| Code | Meaning                                                              |
+| ---- | -------------------------------------------------------------------- |
+| 0    | Stopped by Ctrl-C or SIGTERM, or whatever was reading stdout exited. |
+| 1    | No usable backend, the first clipboard read failed, or output could not be written. |
+| 2    | Invalid command line.                                                |
+
+When stdout is a pipe, clipwatch notices on its next poll that the reader has
+gone away, so `clipwatch | head -3` returns right after the third clip
+rather than waiting for a fourth copy to fail with a broken pipe.
+
 ## License
 
 MIT

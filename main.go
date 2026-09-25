@@ -51,8 +51,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// With SIGPIPE caught, a write to a closed stdout fails with EPIPE
+	// instead of killing the process, and the watch ends with status 0.
+	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
 
 	w := newWatcher(cfg, backend, stdout, stderr)
+	if f, ok := stdout.(*os.File); ok {
+		w.outputGone = readerGone(f)
+	}
 	if err := w.run(ctx); err != nil {
 		fmt.Fprintf(stderr, "clipwatch: %v\n", err)
 		return exitError
