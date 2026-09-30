@@ -34,6 +34,7 @@ clipwatch [flags]
 | --------------------- | ------------------------------------------------------------- |
 | `-i`, `--interval`    | Poll interval, e.g. `250ms`, `2s`; a bare number is ms. Default `500ms`. |
 | `--backend NAME`      | `auto` (default), `pbpaste`, `wl-paste`, `xclip` or `xsel`.   |
+| `--paste-cmd CMD`     | Read the clipboard by running `sh -c CMD` instead of a built-in backend. |
 | `--include-current`   | Also print what is on the clipboard at startup.               |
 | `-0`, `--null`        | End each clip with a NUL byte instead of a newline.           |
 | `--json`              | Print one JSON object per clip (NDJSON).                      |
@@ -86,6 +87,29 @@ With `--backend auto` (the default) clipwatch picks:
 
 If nothing fits, it exits with an error that says what it looked for.
 `--backend NAME` skips detection and uses that tool.
+
+### Other clipboards: `--paste-cmd`
+
+Anything that prints a clipboard to stdout can be watched with
+`--paste-cmd CMD`, which runs `CMD` with `sh -c` on every poll. A non-zero
+exit is reported as a read error.
+
+```sh
+# WSL: the Windows clipboard (Get-Clipboard ends lines with CRLF, hence --trim).
+clipwatch --trim --paste-cmd 'powershell.exe -NoProfile -Command Get-Clipboard'
+
+# The X11 primary selection, i.e. whatever text is highlighted.
+clipwatch --paste-cmd 'xclip -selection primary -o'
+
+# The tmux paste buffer, or Termux on Android.
+clipwatch --paste-cmd 'tmux show-buffer'
+clipwatch --paste-cmd termux-clipboard-get
+```
+
+Keep `--interval` in mind for slow commands: `powershell.exe` takes a few
+hundred milliseconds to start, so `-i 1s` is kinder there.
+
+### Empty clipboards and errors
 
 An empty clipboard, or one holding only non-text data such as an image, is
 not an error: wl-paste and xclip complain and exit non-zero in that case,

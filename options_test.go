@@ -175,3 +175,19 @@ func TestParseExec(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePasteCmd(t *testing.T) {
+	cfg, err := parseArgs([]string{"--paste-cmd", "tmux show-buffer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.pasteCmd != "tmux show-buffer" {
+		t.Errorf("pasteCmd = %q", cfg.pasteCmd)
+	}
+	if _, err := parseArgs([]string{"--paste-cmd", "x", "--backend", "auto"}); err != nil {
+		t.Errorf("--backend auto with --paste-cmd: %v", err)
+	}
+	if _, err := parseArgs([]string{"--paste-cmd", "x", "--backend", "xclip"}); err == nil {
+		t.Error("--paste-cmd with --backend xclip: want an error")
+	}
+}

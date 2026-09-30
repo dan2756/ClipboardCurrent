@@ -63,6 +63,12 @@ func newCmdBackend(name string) *cmdBackend {
 	return &cmdBackend{name: name, argv: pc.argv, emptyHints: pc.emptyHints}
 }
 
+// newShellBackend reads the clipboard with a user-supplied shell command
+// (--paste-cmd). Any failure of it counts as an error.
+func newShellBackend(command string) *cmdBackend {
+	return &cmdBackend{name: "paste-cmd", argv: []string{"sh", "-c", command}}
+}
+
 func (b *cmdBackend) Name() string { return b.name }
 
 func (b *cmdBackend) Read(ctx context.Context) ([]byte, error) {

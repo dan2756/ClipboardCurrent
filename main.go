@@ -43,8 +43,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 
-	backend, err := selectBackend(cfg.backend, systemEnv())
-	if err != nil {
+	var backend Backend
+	if cfg.pasteCmd != "" {
+		backend = newShellBackend(cfg.pasteCmd)
+	} else if backend, err = selectBackend(cfg.backend, systemEnv()); err != nil {
 		fmt.Fprintf(stderr, "clipwatch: %v\n", err)
 		return exitError
 	}

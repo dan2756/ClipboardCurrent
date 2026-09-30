@@ -25,6 +25,7 @@ Polling:
   -i, --interval DUR         poll interval, e.g. 250ms or 2s; a bare number is
                              milliseconds (default 500ms)
       --backend NAME         auto, pbpaste, wl-paste, xclip or xsel (default auto)
+      --paste-cmd CMD        read the clipboard by running sh -c CMD
       --include-current      also print what is on the clipboard at startup
 
 Output:
@@ -52,6 +53,7 @@ Examples:
   clipwatch --json | jq -r .text
   clipwatch --trim --filter '^[0-9a-f]{40}$' --max-bytes 1KB
   clipwatch --exec 'notify-send "Copied $CLIPWATCH_BYTES bytes"'
+  clipwatch --paste-cmd 'xclip -selection primary -o'
 `
 
 // minInterval keeps a typo like "-i 1" from becoming a busy loop of
@@ -62,6 +64,7 @@ const minInterval = 10 * time.Millisecond
 type config struct {
 	interval       time.Duration
 	backend        string
+	pasteCmd       string
 	includeCurrent bool
 	framing        framing
 	timestamp      bool
@@ -91,6 +94,7 @@ func parseArgs(args []string) (config, error) {
 	fs.Var(interval, "i", "")
 	fs.Var(interval, "interval", "")
 	fs.StringVar(&cfg.backend, "backend", cfg.backend, "")
+	fs.StringVar(&cfg.pasteCmd, "paste-cmd", "", "")
 	fs.BoolVar(&cfg.includeCurrent, "include-current", false, "")
 	var null, jsonOut bool
 	fs.BoolVar(&null, "0", false, "")
@@ -117,6 +121,9 @@ func parseArgs(args []string) (config, error) {
 	}
 	if cfg.dedupe < 0 {
 		return cfg, errors.New("--dedupe must be 0 or more")
+	}
+	if cfg.pasteCmd != "" && cfg.backend != "auto" {
+		return cfg, errors.New("--paste-cmd and --backend cannot be used together")
 	}
 	switch {
 	case cfg.exec != "" && (null || jsonOut || cfg.timestamp):
