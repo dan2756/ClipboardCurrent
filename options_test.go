@@ -55,6 +55,7 @@ func TestParseArgsErrors(t *testing.T) {
 		{[]string{"-i", "-5"}, "out of range"},
 		{[]string{"extra"}, `unexpected argument "extra"`},
 		{[]string{"--bogus"}, "not defined"},
+		{[]string{"--backend", "klipper"}, `unknown backend "klipper"`},
 	}
 	for _, tt := range tests {
 		_, err := parseArgs(tt.args)
@@ -85,12 +86,14 @@ func TestRunHelpAndVersion(t *testing.T) {
 }
 
 func TestRunUsageError(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	if code := run([]string{"--nope"}, &stdout, &stderr); code != exitUsage {
-		t.Errorf("exit %d, want %d", code, exitUsage)
-	}
-	if !strings.Contains(stderr.String(), "clipwatch --help") {
-		t.Errorf("stderr = %q, want a pointer to --help", stderr.String())
+	for _, args := range [][]string{{"--nope"}, {"--backend", "klipper"}} {
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != exitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, exitUsage)
+		}
+		if !strings.Contains(stderr.String(), "clipwatch --help") {
+			t.Errorf("%v: stderr = %q, want a pointer to --help", args, stderr.String())
+		}
 	}
 }
 

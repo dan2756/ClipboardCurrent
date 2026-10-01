@@ -57,10 +57,8 @@ func TestRunPipeline(t *testing.T) {
 	}
 	setClip(t, clipFile, "not a link")
 	setClip(t, clipFile, "https://pkg.go.dev")
-	if got := readLine(); got != "https://pkg.go.dev\n" && got != "not a link\n" {
-		t.Fatalf("second line = %q", got)
-	} else if got == "not a link\n" {
-		t.Fatal("--filter let a non-matching clip through")
+	if got := readLine(); got != "https://pkg.go.dev\n" {
+		t.Fatalf("second line = %q, want the next link and nothing in between", got)
 	}
 
 	r.Close() // the reader goes away, as head does

@@ -22,6 +22,7 @@ type fakeBackend struct {
 type fakeState struct {
 	text string
 	err  error
+	hang bool // block until the read is cancelled, like a stuck wl-paste
 }
 
 func (f *fakeBackend) Name() string { return "fake" }
@@ -33,6 +34,10 @@ func (f *fakeBackend) Read(ctx context.Context) ([]byte, error) {
 	}
 	s := f.states[f.reads]
 	f.reads++
+	if s.hang {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -216,5 +221,65 @@ func TestOtherWriteErrorsAreFatal(t *testing.T) {
 	r := watch(t, config{}, states("", "a", "b"), toFullDisk)
 	if !errors.Is(r.err, syscall.ENOSPC) {
 		t.Fatalf("err = %v, want ENOSPC", r.err)
+	}
+}
+
+func TestHungReadTimesOut(t *testing.T) {
+	quickTimeout := func(w *watcher) { w.readTimeout = 20 * time.Millisecond }
+	script := []fakeState{{text: ""}, {text: "a"}, {hang: true}, {hang: true}, {text: "b"}}
+	r := watch(t, config{}, script, quickTimeout)
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if want := "a\nb\n"; r.stdout != want {
+		t.Errorf("stdout = %q, want %q", r.stdout, want)
+	}
+	if want := "clipwatch: fake: no answer after 20ms\n"; r.stderr != want {
+		t.Errorf("stderr = %q, want %q", r.stderr, want)
+	}
+}
+
+func TestHungFirstReadIsFatal(t *testing.T) {
+	quickTimeout := func(w *watcher) { w.readTimeout = 20 * time.Millisecond }
+	r := watch(t, config{}, []fakeState{{hang: true}, {text: "a"}}, quickTimeout)
+	if r.err == nil || !strings.Contains(r.err.Error(), "no answer after 20ms") {
+		t.Errorf("err = %v, want a timeout", r.err)
+	}
+}
+
+// stalledWriter blocks every write until release is closed, like a pipe
+// whose reader has stopped reading; the first write also stops the watch,
+// as Ctrl-C or SIGTERM would.
+type stalledWriter struct {
+	stop    context.CancelFunc
+	release chan struct{}
+}
+
+func (s stalledWriter) Write(p []byte) (int, error) {
+	s.stop()
+	<-s.release
+	return len(p), nil
+}
+
+func TestStopDuringBlockedWrite(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	release := make(chan struct{})
+	defer close(release)
+
+	fb := &fakeBackend{states: states("a", "a"), cancel: cancel}
+	cfg := config{interval: time.Millisecond, includeCurrent: true}
+	var stderr bytes.Buffer
+	w := newWatcher(cfg, fb, stalledWriter{stop: cancel, release: release}, &stderr)
+
+	done := make(chan error, 1)
+	go func() { done <- w.run(ctx) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("stopping during a write should end the watch quietly: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watch could not be stopped while a write was blocked")
 	}
 }

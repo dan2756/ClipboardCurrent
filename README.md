@@ -50,6 +50,26 @@ clipwatch [flags]
 What is already on the clipboard when clipwatch starts is not printed unless
 `--include-current` is given. Stop it with Ctrl-C.
 
+### Examples
+
+```sh
+# Keep every link you copy.
+clipwatch --trim --filter '^https?://' >> ~/links.txt
+
+# Wait for the next copied URL and open it (clipwatch exits when head does).
+xdg-open "$(clipwatch --trim --filter '^https?://' | head -1)"
+
+# Structured log for later processing.
+clipwatch --json >> ~/clips.ndjson
+jq -r 'select(.bytes < 200) | .text' ~/clips.ndjson
+
+# Multi-line safe: one notification per clip, however many lines it has.
+clipwatch -0 | xargs -0 -n1 notify-send Copied
+
+# Run a script for every copy, with the clip on stdin.
+clipwatch --exec '~/bin/on-copy.sh'
+```
+
 ## Output formats
 
 **Lines (default).** Each clip is followed by a newline, unless it already
@@ -92,7 +112,10 @@ If nothing fits, it exits with an error that says what it looked for.
 
 Anything that prints a clipboard to stdout can be watched with
 `--paste-cmd CMD`, which runs `CMD` with `sh -c` on every poll. A non-zero
-exit is reported as a read error.
+exit is reported as a read error, except when the command's message is what
+wl-paste, xclip or `tmux show-buffer` print when there is nothing to paste
+(`Nothing is copied`, `Error: target STRING not available`, `no buffers`):
+that is an empty clipboard, just as with the built-in backends.
 
 ```sh
 # WSL: the Windows clipboard (Get-Clipboard ends lines with CRLF, hence --trim).
@@ -116,6 +139,12 @@ not an error: wl-paste and xclip complain and exit non-zero in that case,
 and clipwatch treats it as empty. Other read errors after startup are
 reported once on stderr and polling continues; an error on the very first
 read is fatal, since it usually means the tool cannot reach the display.
+
+wl-paste and xclip ask the application that owns the clipboard for its
+contents and wait for the answer, which never comes if that application is
+frozen. A read that takes longer than 5 seconds is abandoned (the paste
+command is killed, along with anything it started), reported as
+`no answer after 5s`, and retried on the next poll.
 
 ## Running a command per clip
 
@@ -178,6 +207,26 @@ clipwatch --trim --dedupe 500 --timestamp >> ~/.clipboard-history
 When stdout is a pipe, clipwatch notices on its next poll that the reader has
 gone away, so `clipwatch | head -3` returns right after the third clip
 rather than waiting for a fourth copy to fail with a broken pipe.
+
+## Notes
+
+- **Polling cannot see repeats.** Copying the exact same text twice in a row
+  leaves the clipboard unchanged, so it is printed once.
+- **Changes between polls are lost.** If you copy two things within one
+  interval, only the second is seen. Lower `--interval` if that matters;
+  each poll is one short-lived process, so 100–250ms is still cheap.
+- **Sensitive data.** clipwatch sees everything you copy, passwords
+  included. Password managers usually clear the clipboard after a while, but
+  a log written by clipwatch keeps it. Use `--filter` to log only what you
+  mean to.
+- **macOS.** `pbpaste` prints the plain-text flavour of the clipboard, so
+  rich text arrives as plain text and images are ignored. There is no
+  cheaper way to ask whether the clipboard changed without linking against
+  AppKit, so clipwatch simply runs `pbpaste` once per interval.
+- **Wayland without data-control.** On compositors that do not implement a
+  data-control protocol, wl-paste has to open a tiny window to read the
+  clipboard, which can flicker or steal focus when done every 500ms. If you
+  see that, try `--backend xclip` (through XWayland) or a longer `--interval`.
 
 ## License
 

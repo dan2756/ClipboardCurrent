@@ -10,10 +10,16 @@ import (
 	"time"
 )
 
+// readTimeout bounds a single clipboard read. Paste tools wait for the app
+// that owns the clipboard to hand it over, and block for as long as that app
+// is frozen; a few seconds is far longer than a healthy read takes.
+const readTimeout = 5 * time.Second
+
 // watcher polls a Backend and hands each new clip to a sink.
 type watcher struct {
 	backend        Backend
 	interval       time.Duration
+	readTimeout    time.Duration
 	includeCurrent bool
 	filters        filters
 	recent         *history
@@ -35,6 +41,7 @@ func newWatcher(cfg config, b Backend, out, errOut io.Writer) *watcher {
 	return &watcher{
 		backend:        b,
 		interval:       cfg.interval,
+		readTimeout:    readTimeout,
 		includeCurrent: cfg.includeCurrent,
 		filters: filters{
 			trim:           cfg.trim,
@@ -66,7 +73,7 @@ func (w *watcher) run(ctx context.Context) error {
 		if w.outputGone != nil && w.outputGone() {
 			return nil
 		}
-		data, err := w.backend.Read(ctx)
+		data, err := w.read(ctx)
 		if err == nil {
 			w.lastWarn = ""
 		}
@@ -82,13 +89,13 @@ func (w *watcher) run(ctx context.Context) error {
 			last = data
 			if w.includeCurrent {
 				if err := w.emit(ctx, data); err != nil {
-					return stopError(err)
+					return stopError(ctx, err)
 				}
 			}
 		case !bytes.Equal(data, last):
 			last = data
 			if err := w.emit(ctx, data); err != nil {
-				return stopError(err)
+				return stopError(ctx, err)
 			}
 		}
 
@@ -100,11 +107,23 @@ func (w *watcher) run(ctx context.Context) error {
 	}
 }
 
+// read reads the clipboard once, giving up after readTimeout so that one
+// hung paste command cannot stall the watch for good.
+func (w *watcher) read(ctx context.Context) ([]byte, error) {
+	rctx, cancel := context.WithTimeout(ctx, w.readTimeout)
+	defer cancel()
+	data, err := w.backend.Read(rctx)
+	if err != nil && ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+		return nil, fmt.Errorf("%s: no answer after %v", w.backend.Name(), w.readTimeout)
+	}
+	return data, err
+}
+
 // stopError filters an error that ended the watch. A broken pipe is how a
 // pipeline normally tells its writer to stop ("clipwatch | head -3"), so
-// it is not an error.
-func stopError(err error) error {
-	if errors.Is(err, syscall.EPIPE) {
+// it is not an error, and neither is a write cut short by ctx ending.
+func stopError(ctx context.Context, err error) error {
+	if errors.Is(err, syscall.EPIPE) || ctx.Err() != nil {
 		return nil
 	}
 	return err

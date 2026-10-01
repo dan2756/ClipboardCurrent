@@ -122,6 +122,9 @@ func parseArgs(args []string) (config, error) {
 	if cfg.dedupe < 0 {
 		return cfg, errors.New("--dedupe must be 0 or more")
 	}
+	if _, ok := pasteCommands[cfg.backend]; !ok && cfg.backend != "auto" && cfg.backend != "" {
+		return cfg, fmt.Errorf("unknown backend %q (want %s)", cfg.backend, backendNames)
+	}
 	if cfg.pasteCmd != "" && cfg.backend != "auto" {
 		return cfg, errors.New("--paste-cmd and --backend cannot be used together")
 	}

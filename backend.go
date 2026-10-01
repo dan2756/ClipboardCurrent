@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // Backend reads the current clipboard contents.
@@ -64,9 +65,16 @@ func newCmdBackend(name string) *cmdBackend {
 }
 
 // newShellBackend reads the clipboard with a user-supplied shell command
-// (--paste-cmd). Any failure of it counts as an error.
+// (--paste-cmd). Such a command is often one of the built-in tools with
+// other options (xclip -selection primary, wl-paste --primary) or tmux
+// show-buffer, so their "nothing to paste" messages also mean an empty
+// clipboard here; any other failure counts as an error.
 func newShellBackend(command string) *cmdBackend {
-	return &cmdBackend{name: "paste-cmd", argv: []string{"sh", "-c", command}}
+	hints := []string{"no buffers"} // tmux show-buffer
+	for _, pc := range pasteCommands {
+		hints = append(hints, pc.emptyHints...)
+	}
+	return &cmdBackend{name: "paste-cmd", argv: []string{"sh", "-c", command}, emptyHints: hints}
 }
 
 func (b *cmdBackend) Name() string { return b.name }
@@ -76,6 +84,12 @@ func (b *cmdBackend) Read(ctx context.Context) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, b.argv[0], b.argv[1:]...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	// When a read is cancelled, kill everything the command started too
+	// (a --paste-cmd runs its tool as a child of sh), not just the command.
+	killGroupOnCancel(cmd)
+	// Something that left the process group may still hold the output
+	// pipes open; stop waiting for it shortly after.
+	cmd.WaitDelay = time.Second
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

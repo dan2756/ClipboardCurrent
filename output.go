@@ -51,7 +51,7 @@ type writerSink struct {
 	buf       bytes.Buffer
 }
 
-func (s *writerSink) emit(_ context.Context, c clip) error {
+func (s *writerSink) emit(ctx context.Context, c clip) error {
 	s.buf.Reset()
 	switch s.framing {
 	case frameJSON:
@@ -80,8 +80,21 @@ func (s *writerSink) emit(_ context.Context, c clip) error {
 	}
 	// One Write per clip, straight to the file: a reader on the other end
 	// of a pipe sees each record whole, as soon as it is copied.
-	_, err := s.w.Write(s.buf.Bytes())
-	return err
+	//
+	// The write blocks for as long as a stalled reader leaves the pipe
+	// full, so it runs on its own and is abandoned if the watch is stopped
+	// meanwhile; otherwise Ctrl-C and SIGTERM would wait for the reader.
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.w.Write(s.buf.Bytes())
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // execGrace is how long an --exec command gets to exit after clipwatch is

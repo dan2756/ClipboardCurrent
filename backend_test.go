@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeEnv builds a sysEnv with the given variables and commands on PATH.
@@ -148,6 +149,29 @@ func TestCmdBackendEmptyClipboard(t *testing.T) {
 	}
 }
 
+func TestPasteCmdEmptyClipboard(t *testing.T) {
+	// What the --paste-cmd examples in the readme print when nothing is
+	// highlighted or buffered yet.
+	for _, msg := range []string{
+		"Error: target STRING not available", // xclip -selection primary -o
+		"Nothing is copied",                  // wl-paste --primary
+		"no buffers",                         // tmux show-buffer
+	} {
+		got, err := newShellBackend(`echo "` + msg + `" >&2; exit 1`).Read(context.Background())
+		if err != nil {
+			t.Errorf("%q reported as error: %v", msg, err)
+		}
+		if len(got) != 0 {
+			t.Errorf("%q: Read = %q, want nothing", msg, got)
+		}
+	}
+
+	_, err := newShellBackend(`echo "no server running on /tmp/tmux-1000/default" >&2; exit 1`).Read(context.Background())
+	if err == nil {
+		t.Error("a real failure of the paste command was taken for an empty clipboard")
+	}
+}
+
 func TestCmdBackendErrors(t *testing.T) {
 	hints := pasteCommands["wl-paste"].emptyHints
 
@@ -159,5 +183,20 @@ func TestCmdBackendErrors(t *testing.T) {
 	_, err = shBackend(`exit 7`, hints...).Read(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "exit status 7") {
 		t.Errorf("silent failure: err = %v, want the exit status", err)
+	}
+}
+
+func TestCmdBackendKilledOnTimeout(t *testing.T) {
+	b := &cmdBackend{name: "slow", argv: []string{"sleep", "30"}}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := b.Read(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want DeadlineExceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("Read took %v after its deadline", elapsed)
 	}
 }
