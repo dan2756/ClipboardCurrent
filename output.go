@@ -8,7 +8,6 @@ import (
 	"io"
 	"os/exec"
 	"strconv"
-	"syscall"
 	"time"
 )
 
@@ -116,15 +115,25 @@ func (s *execSink) emit(ctx context.Context, c clip) error {
 	cmd.Stdout = s.stdout
 	cmd.Stderr = s.stderr
 	cmd.Env = append(cmd.Environ(), "CLIPWATCH_BYTES="+strconv.Itoa(len(c.text)))
-	// Ctrl-C already reaches the command through the terminal's process
-	// group; for a plain SIGTERM to clipwatch, pass it on politely first.
-	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	cmd.WaitDelay = execGrace
+	// SIGTERM the whole group when the watch stops, not just the shell.
+	configureExecCmd(cmd)
 
 	// A failing command is reported but does not stop the watch: the next
-	// clip may well succeed.
-	if err := cmd.Run(); err != nil && ctx.Err() == nil {
+	// clip may well succeed. Being stopped is not a failure of the command.
+	if err := cmd.Start(); err != nil {
+		if ctx.Err() == nil {
+			fmt.Fprintf(s.stderr, "clipwatch: --exec: %v\n", err)
+		}
+		return nil
+	}
+	// Setpgid made this process the group leader, so its pid is the group id.
+	pid := cmd.Process.Pid
+	if err := cmd.Wait(); err != nil && ctx.Err() == nil {
 		fmt.Fprintf(s.stderr, "clipwatch: --exec: %v\n", err)
+	}
+	if ctx.Err() != nil {
+		killExecGroup(pid)
 	}
 	return nil
 }
