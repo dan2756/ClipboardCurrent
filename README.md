@@ -143,8 +143,9 @@ read is fatal, since it usually means the tool cannot reach the display.
 wl-paste and xclip ask the application that owns the clipboard for its
 contents and wait for the answer, which never comes if that application is
 frozen. A read that takes longer than 5 seconds is abandoned (the paste
-command is killed, along with anything it started), reported as
-`no answer after 5s`, and retried on the next poll.
+command is killed, along with anything it started) and reported as
+`no answer after 5s`. That is still a failed read: fatal when it is the
+first one, and after startup reported once and retried on the next poll.
 
 ## Running a command per clip
 
