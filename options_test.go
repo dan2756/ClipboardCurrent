@@ -56,6 +56,8 @@ func TestParseArgsErrors(t *testing.T) {
 		{[]string{"extra"}, `unexpected argument "extra"`},
 		{[]string{"--bogus"}, "not defined"},
 		{[]string{"--backend", "klipper"}, `unknown backend "klipper"`},
+		{[]string{"--max-bytes", "0"}, "at least 1 byte"},
+		{[]string{"--max-bytes", "0.5"}, "whole number of bytes"},
 	}
 	for _, tt := range tests {
 		_, err := parseArgs(tt.args)

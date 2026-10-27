@@ -29,8 +29,19 @@ func parseSize(s string) (int64, error) {
 	case "g":
 		n *= 1 << 30
 	}
-	if n >= math.MaxInt64 {
+	// float64(MaxInt64) rounds to 2^63, so this rejects values that do not
+	// fit in an int64. A limit of 0 means "no limit" (the flag's zero
+	// value), so anything that is not a positive whole number of bytes is
+	// an error: truncating 0.5 used to become 0 and silently disable
+	// --max-bytes, and truncating 1.9 used to become 1.
+	if math.IsNaN(n) || math.IsInf(n, 0) || n >= float64(math.MaxInt64) {
 		return 0, fmt.Errorf("size %q is too large", s)
+	}
+	if n > 0 && math.Trunc(n) != n {
+		return 0, fmt.Errorf("size %q is not a whole number of bytes", s)
+	}
+	if n < 1 {
+		return 0, fmt.Errorf("size %q must be at least 1 byte", s)
 	}
 	return int64(n), nil
 }
