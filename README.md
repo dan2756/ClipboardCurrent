@@ -159,7 +159,10 @@ The clip is on the command's stdin, exactly as it would have been printed
 The command's own stdout and stderr go to clipwatch's. Commands run one at a
 time and polling pauses while one runs, so they never overlap; anything
 copied in the meantime is seen as a single change once the command exits. A
-command that fails is reported on stderr and the watch carries on.
+command that fails is reported on stderr and the watch carries on. Ctrl-C or
+SIGTERM stops a command that is still running, and anything that command
+started: it is asked to exit, then killed if it is still there after a
+couple of seconds.
 
 ```sh
 # Desktop notification for every copy.
