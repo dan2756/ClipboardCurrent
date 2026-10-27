@@ -7,7 +7,6 @@ func TestParseSize(t *testing.T) {
 		in   string
 		want int64
 	}{
-		{"0", 0},
 		{"4096", 4096},
 		{"512B", 512},
 		{"64k", 64 << 10},
@@ -16,6 +15,7 @@ func TestParseSize(t *testing.T) {
 		{"1MB", 1 << 20},
 		{"1 MiB", 1 << 20},
 		{"1.5M", 3 << 19},
+		{"0.5KB", 512},
 		{"2gb", 2 << 30},
 	}
 	for _, tt := range tests {
@@ -31,7 +31,7 @@ func TestParseSize(t *testing.T) {
 }
 
 func TestParseSizeErrors(t *testing.T) {
-	for _, in := range []string{"", "MB", "-1", "1TB", "1.2.3", "ten", "1e3", "99999999999G"} {
+	for _, in := range []string{"", "0", "0.5", "0.1KB", "1.9", "MB", "-1", "1TB", "1.2.3", "ten", "1e3", "99999999999G"} {
 		if n, err := parseSize(in); err == nil {
 			t.Errorf("parseSize(%q) = %d, want an error", in, n)
 		}
