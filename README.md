@@ -182,7 +182,9 @@ Filters run in this order, and a clip that fails one is silently skipped:
 
 1. `--trim` strips surrounding whitespace (everything below sees the trimmed text).
 2. Empty clips, such as a cleared clipboard, are always skipped.
-3. `--ignore-whitespace-only` skips clips that are only spaces, tabs and newlines.
+3. `--ignore-whitespace-only` skips clips that are only whitespace, the same
+   characters `--trim` strips: spaces, tabs, newlines, and other Unicode
+   spaces such as a non-breaking space.
 4. `--max-bytes` skips clips that are too large.
 5. `--filter` keeps only clips the regular expression matches. It is matched
    against the whole clip, so `^` and `$` anchor to its start and end; use

@@ -36,6 +36,22 @@ func TestTrimRunsBeforeFilter(t *testing.T) {
 	}
 }
 
+func TestUnicodeWhitespace(t *testing.T) {
+	// bytes.TrimSpace follows Unicode's White_Space, so a clip of only a
+	// non-breaking space or a vertical tab is skipped, and --trim removes
+	// the same characters from the ends.
+	nbsp := "\u00a0"
+	r := watch(t, config{ignoreWhitespaceOnly: true}, states("", nbsp, "\v\f", "a"+nbsp+"b"))
+	if want := "a" + nbsp + "b\n"; r.stdout != want {
+		t.Errorf("ignore: stdout = %q, want %q", r.stdout, want)
+	}
+
+	r = watch(t, config{trim: true}, states("", nbsp+"hello\n"+nbsp))
+	if want := "hello\n"; r.stdout != want {
+		t.Errorf("trim: stdout = %q, want %q", r.stdout, want)
+	}
+}
+
 func TestIgnoreWhitespaceOnly(t *testing.T) {
 	script := states("", " ", "a", "\n\t \n", "b")
 
