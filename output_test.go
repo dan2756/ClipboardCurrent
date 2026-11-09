@@ -67,6 +67,21 @@ func TestJSONBytesCountsRawBytes(t *testing.T) {
 	}
 }
 
+func TestJSONReplacesInvalidUTF8(t *testing.T) {
+	// The text field is a JSON string, so an invalid byte becomes U+FFFD.
+	// bytes stays the size of the clip that was copied, not of that
+	// replacement.
+	raw := string([]byte{'a', 0xff, 'b'})
+	r := watch(t, config{framing: frameJSON}, states("", raw), frozenClock)
+	var c jsonClip
+	if err := json.Unmarshal([]byte(r.stdout), &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Bytes != 3 || c.Text != "a\uFFFDb" {
+		t.Errorf("got bytes=%d text=%q, want 3 and a U+FFFD", c.Bytes, c.Text)
+	}
+}
+
 func TestTimestampPrefix(t *testing.T) {
 	r := watch(t, config{timestamp: true}, states("", "a", "b"), frozenClock)
 	want := "2026-08-03T10:32:52Z\ta\n2026-08-03T10:32:52Z\tb\n"
