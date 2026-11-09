@@ -20,3 +20,6 @@ func configureExecCmd(cmd *exec.Cmd) {
 
 // killExecGroup is only implemented on Unix.
 func killExecGroup(int) {}
+
+// awaitExecGroup is only implemented on Unix.
+func awaitExecGroup(int) {}

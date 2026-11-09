@@ -133,6 +133,9 @@ func (s *execSink) emit(ctx context.Context, c clip) error {
 		fmt.Fprintf(s.stderr, "clipwatch: --exec: %v\n", err)
 	}
 	if ctx.Err() != nil {
+		// WaitDelay's follow-up SIGKILL reaches only the shell. Give the
+		// programs it started the grace period before killing them too.
+		awaitExecGroup(pid)
 		killExecGroup(pid)
 	}
 	return nil
