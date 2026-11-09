@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 )
 
 // killGroupOnCancel runs cmd in a process group of its own and makes
@@ -40,4 +41,25 @@ func killExecGroup(pid int) {
 		return
 	}
 	_ = syscall.Kill(-pid, syscall.SIGKILL)
+}
+
+// awaitExecGroup waits up to execGrace for the process group led by pid to
+// exit. sh dies as soon as it is signaled and does not wait for the program
+// it started; that program was signaled too, and gets this long to finish
+// exiting before the group is killed. A group that is already gone returns
+// at once.
+func awaitExecGroup(pid int) {
+	if pid <= 0 {
+		return
+	}
+	deadline := time.Now().Add(execGrace)
+	for groupAlive(pid) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// groupAlive reports whether any process in the group led by pid still
+// exists. Signal 0 checks without delivering anything.
+func groupAlive(pid int) bool {
+	return syscall.Kill(-pid, 0) != syscall.ESRCH
 }
