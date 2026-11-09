@@ -8,11 +8,40 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestFinishedPasteKeptWhenCanceled(t *testing.T) {
+	// cmdBackend.Read cancels with killGroupOnCancel. A read that reaches
+	// its deadline in the same moment the paste exits must keep that
+	// output; otherwise the watch treats a finished read as a failure.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", "printf clipboard")
+	killGroupOnCancel(cmd)
+	cmd.WaitDelay = time.Second
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	// Let the process exit and become a zombie. Wait has not reaped it,
+	// which is when Cancel races a completed paste.
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	time.Sleep(50 * time.Millisecond)
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("Wait = %v, want nil; stdout %q", err, stdout.String())
+	}
+	if stdout.String() != "clipboard" {
+		t.Fatalf("stdout = %q, want the paste that already finished", stdout.String())
+	}
+}
 
 func TestPasteCmdKilledWithItsChildren(t *testing.T) {
 	ticks := filepath.Join(t.TempDir(), "ticks")
