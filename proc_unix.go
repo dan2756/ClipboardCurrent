@@ -15,7 +15,18 @@ import (
 // shell, and the real command carries on as an orphan.
 func killGroupOnCancel(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.Cancel = func() error {
+		// A nil return tells os/exec the context caused the exit, so a
+		// paste that had already finished is reported as cancelled and
+		// its output is dropped. kill(2) also returns nil for a zombie
+		// Wait has not reaped yet. ErrProcessDone keeps the real status:
+		// success if the paste completed, the signal if it was killed.
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if err == nil || err == syscall.ESRCH {
+			return os.ErrProcessDone
+		}
+		return err
+	}
 }
 
 // configureExecCmd puts an --exec command in its own process group and, when
