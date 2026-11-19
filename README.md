@@ -114,7 +114,8 @@ Anything that prints a clipboard to stdout can be watched with
 `--paste-cmd CMD`, which runs `CMD` with `sh -c` on every poll. A non-zero
 exit is reported as a read error, except when the command's message is what
 wl-paste, xclip or `tmux show-buffer` print when there is nothing to paste
-(`Nothing is copied`, `Error: target STRING not available`, `no buffers`):
+(`Nothing is copied`, `Clipboard content is not available as requested type "text"`,
+`Error: target STRING not available`, `no buffers`):
 that is an empty clipboard, just as with the built-in backends.
 
 ```sh
