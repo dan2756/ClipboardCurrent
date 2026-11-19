@@ -192,3 +192,48 @@ while true; do sleep 0.05; done
 		t.Errorf("marker = %q, want the child to finish its SIGTERM handler", got)
 	}
 }
+
+func TestExecBrokenPipeIsQuiet(t *testing.T) {
+	// "clipwatch --exec cat | head" closes the read end. cat then dies with
+	// SIGPIPE and the shell exits 141. That is the reader leaving, not a
+	// command that failed on its own.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	r.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var stderr bytes.Buffer
+	s := &execSink{command: "cat", stdout: w, stderr: &stderr}
+	start := time.Now()
+	if err := s.emit(ctx, clip{text: []byte("hello\n")}); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 2*time.Second || ctx.Err() != nil {
+		t.Fatal("cat did not finish after stdout's reader closed")
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want nothing for a closed reader", stderr.String())
+	}
+}
+
+func TestExecOtherFailureStillReportedWhenReaderIsGone(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	r.Close()
+
+	var stderr bytes.Buffer
+	s := &execSink{command: "exit 3", stdout: w, stderr: &stderr}
+	if err := s.emit(context.Background(), clip{text: []byte("x")}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr.String(), "exit status 3") {
+		t.Errorf("stderr = %q, want the command's own failure", stderr.String())
+	}
+}
