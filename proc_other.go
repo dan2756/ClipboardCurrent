@@ -23,3 +23,6 @@ func killExecGroup(int) {}
 
 // awaitExecGroup is only implemented on Unix.
 func awaitExecGroup(int) {}
+
+// diedFromBrokenPipe is only meaningful where commands die of SIGPIPE.
+func diedFromBrokenPipe(error) bool { return false }

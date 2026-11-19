@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"syscall"
@@ -73,4 +74,21 @@ func awaitExecGroup(pid int) {
 // exists. Signal 0 checks without delivering anything.
 func groupAlive(pid int) bool {
 	return syscall.Kill(-pid, 0) != syscall.ESRCH
+}
+
+// diedFromBrokenPipe reports whether err is a command killed by SIGPIPE,
+// or a shell that turned that into the usual 128+signal exit status.
+func diedFromBrokenPipe(err error) bool {
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) {
+		return false
+	}
+	ws, ok := ee.Sys().(syscall.WaitStatus)
+	if !ok {
+		return false
+	}
+	if ws.Signaled() && ws.Signal() == syscall.SIGPIPE {
+		return true
+	}
+	return ws.Exited() && ws.ExitStatus() == 128+int(syscall.SIGPIPE)
 }

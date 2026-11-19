@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"time"
@@ -120,7 +121,9 @@ func (s *execSink) emit(ctx context.Context, c clip) error {
 	configureExecCmd(cmd)
 
 	// A failing command is reported but does not stop the watch: the next
-	// clip may well succeed. Being stopped is not a failure of the command.
+	// clip may well succeed. Being stopped is not a failure of the command,
+	// and neither is SIGPIPE from the reader of stdout going away
+	// ("clipwatch --exec cat | head").
 	if err := cmd.Start(); err != nil {
 		if ctx.Err() == nil {
 			fmt.Fprintf(s.stderr, "clipwatch: --exec: %v\n", err)
@@ -129,7 +132,7 @@ func (s *execSink) emit(ctx context.Context, c clip) error {
 	}
 	// Setpgid made this process the group leader, so its pid is the group id.
 	pid := cmd.Process.Pid
-	if err := cmd.Wait(); err != nil && ctx.Err() == nil {
+	if err := cmd.Wait(); err != nil && ctx.Err() == nil && !stdoutClosedUnder(s.stdout, err) {
 		fmt.Fprintf(s.stderr, "clipwatch: --exec: %v\n", err)
 	}
 	if ctx.Err() != nil {
@@ -139,4 +142,21 @@ func (s *execSink) emit(ctx context.Context, c clip) error {
 		killExecGroup(pid)
 	}
 	return nil
+}
+
+// stdoutClosedUnder reports whether err is the shell dying of a broken
+// pipe and stdout is a pipe whose read end is already gone. That is the
+// reader of a pipeline exiting, which stops the watch quietly; it is not
+// a failed command. A command that exits 141 for some other reason, or
+// that fails while the reader is still there, is still reported.
+func stdoutClosedUnder(stdout io.Writer, err error) bool {
+	if !diedFromBrokenPipe(err) {
+		return false
+	}
+	f, ok := stdout.(*os.File)
+	if !ok {
+		return false
+	}
+	gone := readerGone(f)
+	return gone != nil && gone()
 }

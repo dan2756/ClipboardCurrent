@@ -159,6 +159,18 @@ func TestExecFailureIsReportedAndWatchContinues(t *testing.T) {
 	}
 }
 
+func TestExecPipeStatusIsReportedWhenStdoutIsOpen(t *testing.T) {
+	// 141 is what a shell reports for SIGPIPE. On its own, with a reader
+	// still attached, it is a failed command and must be shown.
+	r := watch(t, config{exec: "exit 141"}, states("", "a"))
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if !strings.Contains(r.stderr, "exit status 141") {
+		t.Errorf("stderr = %q, want the exit status", r.stderr)
+	}
+}
+
 func TestExecCommandIgnoringStdin(t *testing.T) {
 	big := strings.Repeat("x", 1<<20) // more than a pipe buffer
 	r := watch(t, config{exec: "echo ran"}, states("", big))
