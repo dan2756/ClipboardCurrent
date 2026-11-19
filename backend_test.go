@@ -132,6 +132,8 @@ func TestCmdBackendEmptyClipboard(t *testing.T) {
 		{"wl-paste", `echo "Nothing is copied" >&2; exit 1`, wl},
 		{"old wl-paste", `echo "No selection" >&2; exit 1`, wl},
 		{"wl-paste image only", `echo "No suitable type of content copied" >&2; exit 1`, wl},
+		{"wl-paste image only (2.2)", `echo 'Clipboard content is not available as requested type "text"' >&2; echo 'Use "wl-paste --list-types" to view available types.' >&2; exit 1`, wl},
+		{"wl-paste inferred type", `echo 'Clipboard content is not available as inferred output type "text"' >&2; exit 1`, wl},
 		{"xclip", `echo "Error: target STRING not available" >&2; exit 1`, xclip},
 		{"xclip utf8", `echo "Error: target UTF8_STRING not available" >&2; exit 1`, xclip},
 		{"pbpaste", `exit 0`, nil},

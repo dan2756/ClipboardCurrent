@@ -37,9 +37,16 @@ var pasteCommands = map[string]pasteCommand{
 	"wl-paste": {
 		// --type text keeps images and other binary targets out of the stream.
 		argv: []string{"wl-paste", "--no-newline", "--type", "text"},
-		// "Nothing is copied", "No selection" (older releases) and "No
-		// suitable type of content copied" (only an image, say).
-		emptyHints: []string{"nothing is copied", "no selection", "no suitable type"},
+		// "Nothing is copied" and, on older releases, "No selection".
+		// An image-only clipboard used to be "No suitable type of content
+		// copied"; wl-clipboard 2.2+ says the content "is not available as"
+		// the requested text type. Either way there is nothing to print.
+		emptyHints: []string{
+			"nothing is copied",
+			"no selection",
+			"no suitable type",
+			"content is not available as",
+		},
 	},
 	"xclip": {
 		argv: []string{"xclip", "-selection", "clipboard", "-o"},
